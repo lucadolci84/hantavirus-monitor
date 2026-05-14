@@ -1,163 +1,113 @@
-# HantaWatch + Neon v1.2
+# HantaWatch v4
 
-Questa versione aggiunge Neon Postgres come database gratuito per salvare snapshot e dati normalizzati.
+Questa versione aggiunge funzioni prodotto sopra la base Neon.
 
-## Struttura
+## Novità
 
-```text
-api/
-  monitor.js
-  refresh.js
-lib/
-  db.js
-  sources.js
-  store.js
-migrations/
-  schema.sql
-public/
-  index.html
-package.json
-vercel.json
-```
+- `/api/history`: storico degli snapshot e variazioni rispetto allo snapshot precedente.
+- `/api/status`: stato del database, conteggi, fonti e ultimi log.
+- `/api/country?iso=XX`: scheda dati per paese.
+- Scheda paese nel frontend cliccando sulla mappa.
+- Sezione storico nella dashboard.
+- Sezione stato del monitor nella dashboard.
+- Pagina `/metodologia`.
+- Cron giornaliero compatibile con Vercel Hobby.
 
-## 1. Installa dipendenze
+## Avvio locale
 
 ```cmd
 npm install
-```
-
-## 2. Crea il database Neon
-
-Crea un progetto Neon e copia la connection string.
-
-Usa preferibilmente la stringa pooled/serverless, se disponibile.
-
-## 3. Crea le tabelle
-
-Apri il SQL Editor di Neon e incolla il contenuto di:
-
-```text
-migrations/schema.sql
-```
-
-Eseguilo una volta.
-
-## 4. Configura variabili locali
-
-Crea un file `.env.local` nella root del progetto:
-
-```env
-DATABASE_URL="postgresql://..."
-CRON_SECRET="scegli-una-stringa-lunga-casuale"
-```
-
-## 5. Avvio locale
-
-```cmd
 npx vercel dev
 ```
 
-Apri:
-
-```text
-http://localhost:3000
-```
-
-## 6. Primo refresh locale
-
-In locale `/api/refresh` è autorizzato senza secret:
+Refresh locale:
 
 ```text
 http://localhost:3000/api/refresh
 ```
 
-Dovresti vedere un JSON con `ok: true`.
+## Deploy
 
-Poi apri:
-
-```text
-http://localhost:3000/api/monitor
-```
-
-A questo punto `/api/monitor` leggerà lo snapshot dal database.
-
-## 7. Configura Vercel
-
-Nel progetto Vercel aggiungi Environment Variables:
+Imposta in Vercel, ambiente Production:
 
 ```text
 DATABASE_URL
 CRON_SECRET
 ```
 
-Poi fai deploy:
+Poi:
 
 ```cmd
 git add .
-git commit -m "Add Neon database snapshots"
-git push
+git commit -m "Add HantaWatch v4 history status country drawer"
+git push origin main
 ```
 
-## 8. Cron automatico
+Refresh manuale online:
 
-`vercel.json` contiene:
-
-```json
-{
-  "crons": [
-    {
-      "path": "/api/refresh",
-      "schedule": "0 */6 * * *"
-    }
-  ]
-}
+```cmd
+curl -H "Authorization: Bearer IL_TUO_CRON_SECRET" https://TUO-DOMINIO.vercel.app/api/refresh
 ```
 
-Vercel chiamerà `/api/refresh` ogni 6 ore. Se `CRON_SECRET` è configurato, Vercel invierà il secret come header `Authorization: Bearer ...`.
+## Endpoint
 
-## Query utili
-
-Ultimo snapshot:
-
-```sql
-select id, year, generated_at, created_at
-from monitor_snapshots
-order by generated_at desc
-limit 10;
+```text
+/api/monitor
+/api/refresh
+/api/history
+/api/status
+/api/country?iso=FI
+/metodologia
 ```
 
-Segnali più recenti:
 
-```sql
-select title, source, country_name, kind, published_at
-from signals
-order by published_at desc nulls last
-limit 20;
-```
+## v4.1
 
-Metriche Europa:
+Modifiche user-facing:
 
-```sql
-select country_name, value, rate
-from country_metrics
-where source_id = 'ecdc-aer-2023'
-order by value desc nulls last;
-```
+- rimossa dalla homepage la sezione tecnica "Stato del monitor";
+- rimossi termini tecnici come snapshot/log/database dall'interfaccia principale;
+- sostituita la sezione "Storico aggiornamenti" con "Andamento recente";
+- aggiunto grafico "Avvisi nel tempo" basato sugli aggiornamenti salvati;
+- mantenuti `/api/status` e `/api/history` nel backend, ma la dashboard usa solo dati adatti all'utente finale.
 
-Metriche USA settimanali:
 
-```sql
-select metric_week, value
-from country_metrics
-where source_id = 'cdc-nndss-weekly'
-  and metric_type = 'official_surveillance_weekly_cases'
-order by metric_week;
-```
+## v4.2
 
-## Nota architetturale
+Modifiche user-centred:
 
-La dashboard legge da `/api/monitor`.
+- rimossa la card EU/EEA 2023 dalla fascia iniziale per evitare confusione con dati live;
+- chiarita la card USA: "USA · casi cumulativi" e testo "Totale anno selezionato fino alla settimana CDC";
+- l'andamento degli avvisi ora raggruppa i refresh per giorno, così i test manuali non sembrano aggiornamenti epidemiologici;
+- la sezione Europa specifica meglio che si tratta di report annuale ECDC, non aggiornamento live.
 
-- Se esiste uno snapshot nel database, usa quello.
-- Se il database non è configurato o non c'è ancora uno snapshot, usa un fallback live.
-- `/api/refresh` è l'endpoint che aggiorna il database.
+
+## v4.3 Premium + SEO
+
+Modifiche principali:
+
+- UI più premium e coerente: max-width uniforme, tipografia 12/14/18/24/56, superfici leggere, ombre controllate, bordi sottili;
+- nessun elemento tecnico nella homepage;
+- meta title, description, canonical, Open Graph, Twitter Card;
+- JSON-LD WebSite e Dataset in homepage;
+- JSON-LD WebPage nella pagina metodologia;
+- robots.txt e sitemap.xml in `public/`;
+- pagina metodologia aggiornata con lo stesso linguaggio visivo della dashboard.
+
+Se usi un dominio custom, aggiorna:
+- `public/index.html`
+- `public/metodologia.html`
+- `public/robots.txt`
+- `public/sitemap.xml`
+
+sostituendo `https://hantavirusmonitor.vercel.app` con il dominio definitivo.
+
+
+## v4.3.1
+
+Fix routing:
+
+- corretto `vercel.json`;
+- `/metodologia` ora punta a `/metodologia.html`;
+- `/` ora punta a `/index.html`;
+- aggiunto `cleanUrls: true`.

@@ -1,8 +1,8 @@
 {
   "name": "hantawatch-neon",
-  "version": "1.2.0",
+  "version": "1.3.4",
   "private": true,
-  "description": "HantaWatch with Vercel serverless API and Neon Postgres snapshots",
+  "description": "HantaWatch premium SEO with metodologia route fix",
   "engines": {
     "node": ">=18"
   },
