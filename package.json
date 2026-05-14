@@ -1,0 +1,12 @@
+{
+  "name": "hantawatch-neon",
+  "version": "1.2.0",
+  "private": true,
+  "description": "HantaWatch with Vercel serverless API and Neon Postgres snapshots",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0"
+  }
+}

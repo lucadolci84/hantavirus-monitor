@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>HantaWatch Monitor Globale</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    :root {
+      --page: #fbfbfa;
+      --panel: #ffffff;
+      --line: #e4e4e7;
+      --text: #18181b;
+      --muted: #71717a;
+      --official: #2563eb;
+      --signal: #be123c;
+      --event: #7c3aed;
+    }
+
+    body {
+      background: var(--page);
+      color: var(--text);
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 2000;
+      isolation: isolate;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 1px 2px rgba(24, 24, 27, .04);
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+    }
+
+    .pill.active {
+      background: var(--text);
+      color: #fff;
+      border-color: var(--text);
+    }
+
+    #map {
+      height: 640px;
+      min-height: 520px;
+      border-radius: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #eef2f7;
+      z-index: 1;
+    }
+
+    .leaflet-container { font-family: inherit; z-index: 1; }
+    .leaflet-top,
+    .leaflet-bottom { z-index: 900; }
+
+    .leaflet-popup-content-wrapper,
+    .leaflet-popup-tip {
+      background: #fff;
+      color: #18181b;
+      border: 1px solid #e4e4e7;
+      box-shadow: 0 16px 38px rgba(24, 24, 27, .14);
+    }
+
+    .legend {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      z-index: 800;
+      background: rgba(255,255,255,.95);
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 26px rgba(24,24,27,.08);
+      backdrop-filter: blur(10px);
+    }
+
+    .dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+    }
+
+    .dot.official { background: var(--official); }
+    .dot.signal { background: var(--signal); }
+    .dot.event { background: var(--event); }
+
+    @media (max-width: 768px) {
+      #map { height: 470px; min-height: 470px; border-radius: 22px; }
+      .legend { position: static; margin-top: 12px; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen antialiased">
+  <header class="app-header border-b border-zinc-200 bg-white/95 backdrop-blur">
+    <div class="mx-auto max-w-7xl px-5 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-full bg-rose-50 text-rose-800 flex items-center justify-center">
+          <i data-lucide="activity" class="h-5 w-5"></i>
+        </div>
+        <div>
+          <div class="font-semibold tracking-tight text-zinc-950">HantaWatch</div>
+          <div class="text-xs text-zinc-500">Monitor globale sull'hantavirus</div>
+        </div>
+      </div>
+
+      <nav class="flex items-center gap-4 text-sm text-zinc-600">
+        <a class="hover:text-zinc-950" href="#mappa">Mappa</a>
+        <a class="hover:text-zinc-950" href="#eventi">Eventi</a>
+        <a class="hover:text-zinc-950" href="#europa">Europa</a>
+        <a class="hover:text-zinc-950" href="#avvisi">Avvisi</a>
+        <span id="statusBadge" class="hidden sm:inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs">
+          <span class="h-2 w-2 rounded-full bg-amber-400"></span>
+          Aggiornamento
+        </span>
+      </nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-7xl px-5 py-8 space-y-8">
+    <section class="grid gap-6 lg:grid-cols-[1fr_360px] lg:items-end">
+      <div>
+        <p class="mb-3 text-sm font-medium text-rose-800">Dati ufficiali, eventi e copertura globale</p>
+        <h1 class="max-w-4xl text-4xl md:text-5xl font-semibold tracking-tight leading-tight text-zinc-950">
+          Una vista chiara dell'attività hantavirus nel mondo.
+        </h1>
+        <p class="mt-4 max-w-3xl leading-relaxed text-zinc-600">
+          La dashboard separa sorveglianza ufficiale, aggiornamenti evento e avvisi pubblici. I dati europei annuali arrivano da ECDC; gli aggiornamenti evento usano fonti istituzionali più recenti.
+        </p>
+      </div>
+
+      <div class="panel rounded-3xl p-5">
+        <label class="mb-2 block text-xs font-medium uppercase tracking-wide text-zinc-500" for="yearSelector">Dati USA</label>
+        <div class="flex gap-2">
+          <select id="yearSelector" class="w-full rounded-2xl border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-950"></select>
+          <button onclick="loadMonitor()" class="rounded-2xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
+            Aggiorna
+          </button>
+        </div>
+        <p id="lastUpdate" class="mt-3 text-xs text-zinc-500">Ultimo aggiornamento: —</p>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <article class="panel rounded-3xl p-5">
+        <div class="text-xs text-zinc-500">EU/EEA ufficiale</div>
+        <div id="euTotal" class="mt-2 text-3xl font-semibold text-zinc-950">—</div>
+        <div id="euMeta" class="mt-1 text-xs text-zinc-500">ECDC</div>
+      </article>
+
+      <article class="panel rounded-3xl p-5">
+        <div class="text-xs text-zinc-500">Evento recente</div>
+        <div id="eventCases" class="mt-2 text-3xl font-semibold text-zinc-950">—</div>
+        <div id="eventMeta" class="mt-1 text-xs text-zinc-500">ECDC/WHO</div>
+      </article>
+
+      <article class="panel rounded-3xl p-5">
+        <div class="text-xs text-zinc-500">USA YTD</div>
+        <div id="usTotal" class="mt-2 text-3xl font-semibold text-zinc-950">—</div>
+        <div id="usMeta" class="mt-1 text-xs text-zinc-500">CDC</div>
+      </article>
+
+      <article class="panel rounded-3xl p-5">
+        <div class="text-xs text-zinc-500">Paesi su mappa</div>
+        <div id="mapCountries" class="mt-2 text-3xl font-semibold text-zinc-950">—</div>
+        <div class="mt-1 text-xs text-zinc-500">Dati e avvisi</div>
+      </article>
+
+      <article class="panel rounded-3xl p-5">
+        <div class="text-xs text-zinc-500">Avvisi recenti</div>
+        <div id="signalTotal" class="mt-2 text-3xl font-semibold text-zinc-950">—</div>
+        <div class="mt-1 text-xs text-zinc-500">Fonti pubbliche</div>
+      </article>
+    </section>
+
+    <section id="mappa" class="panel rounded-[34px] p-4 md:p-5">
+      <div class="grid gap-5 xl:grid-cols-[1fr_340px]">
+        <div>
+          <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between px-1 pb-4">
+            <div>
+              <h2 class="text-xl font-semibold text-zinc-950">Mappa globale</h2>
+              <p class="mt-1 text-sm text-zinc-500">Blu per sorveglianza ufficiale, viola per eventi istituzionali, rosso per avvisi pubblici.</p>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <button class="pill active rounded-full px-3 py-1.5 text-sm" data-layer="all">Tutto</button>
+              <button class="pill rounded-full px-3 py-1.5 text-sm" data-layer="official">Dati ufficiali</button>
+              <button class="pill rounded-full px-3 py-1.5 text-sm" data-layer="events">Eventi</button>
+              <button class="pill rounded-full px-3 py-1.5 text-sm" data-layer="signals">Avvisi</button>
+            </div>
+          </div>
+
+          <div class="relative">
+            <div id="map"></div>
+            <div class="legend rounded-2xl p-4 text-xs text-zinc-600">
+              <div class="mb-2 font-medium text-zinc-900">Legenda</div>
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-2"><span class="dot official"></span> Sorveglianza ufficiale</div>
+                <div class="flex items-center gap-2"><span class="dot event"></span> Evento istituzionale</div>
+                <div class="flex items-center gap-2"><span class="dot signal"></span> Avviso pubblico</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="space-y-4">
+          <div class="rounded-3xl border border-zinc-200 bg-zinc-50 p-5">
+            <div class="text-xs uppercase tracking-wide text-zinc-500">Lettura rapida</div>
+            <p class="mt-3 text-sm leading-relaxed text-zinc-600">
+              Un paese può comparire per dati ufficiali, per un evento monitorato o per avvisi recenti. Gli avvisi non sono sommati ai casi ufficiali.
+            </p>
+          </div>
+
+          <div class="rounded-3xl border border-zinc-200 bg-white overflow-hidden">
+            <div class="border-b border-zinc-200 px-4 py-3">
+              <h3 class="text-sm font-semibold text-zinc-950">Aree principali</h3>
+            </div>
+            <div id="countryList" class="divide-y divide-zinc-100">
+              <div class="p-4 text-sm text-zinc-500">Caricamento dati.</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="eventi" class="panel rounded-3xl p-6">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-zinc-950">Eventi recenti monitorati</h2>
+          <p class="mt-1 text-sm text-zinc-500">Aggiornamenti istituzionali separati dalla sorveglianza annuale.</p>
+        </div>
+        <span class="w-fit rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">Aggiornamenti evento</span>
+      </div>
+
+      <div id="eventCards" class="mt-5 grid gap-4 lg:grid-cols-2">
+        <div class="rounded-2xl border border-zinc-200 p-4 text-sm text-zinc-500">Caricamento eventi.</div>
+      </div>
+    </section>
+
+    <section id="europa" class="grid gap-6 lg:grid-cols-[1fr_420px]">
+      <article class="panel rounded-3xl p-6">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-zinc-950">Europa EU/EEA</h2>
+            <p id="europeSubtitle" class="mt-1 text-sm text-zinc-500">Dati annuali ufficiali ECDC.</p>
+          </div>
+          <span class="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">Sorveglianza ufficiale</span>
+        </div>
+
+        <div class="mt-5 h-72">
+          <canvas id="europeChart"></canvas>
+        </div>
+      </article>
+
+      <article class="panel rounded-3xl p-6">
+        <h2 class="text-lg font-semibold text-zinc-950">Paesi EU/EEA con più casi</h2>
+        <p class="mt-1 text-sm text-zinc-500">Valori annuali, non aggiornamenti live.</p>
+
+        <div class="mt-5 overflow-hidden rounded-2xl border border-zinc-200">
+          <table class="w-full text-sm">
+            <thead class="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+              <tr>
+                <th class="px-4 py-3 text-left">Paese</th>
+                <th class="px-4 py-3 text-right">Casi</th>
+                <th class="px-4 py-3 text-right">Tasso</th>
+              </tr>
+            </thead>
+            <tbody id="europeTable" class="divide-y divide-zinc-100 bg-white">
+              <tr><td class="px-4 py-4 text-zinc-500" colspan="3">Caricamento.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid gap-6 lg:grid-cols-[420px_1fr]">
+      <article class="panel rounded-3xl p-6">
+        <h2 class="text-lg font-semibold text-zinc-950">Stati Uniti</h2>
+        <p class="mt-1 text-sm text-zinc-500">Dati settimanali CDC per l'anno selezionato.</p>
+
+        <div class="mt-5 h-72">
+          <canvas id="usaChart"></canvas>
+        </div>
+      </article>
+
+      <article id="avvisi" class="panel rounded-3xl p-6">
+        <h2 class="text-lg font-semibold text-zinc-950">Avvisi recenti</h2>
+        <p class="mt-1 text-sm text-zinc-500">Aggiornamenti pubblici collegati all'hantavirus.</p>
+        <div id="signalFeed" class="mt-5 grid gap-3">
+          <div class="rounded-2xl border border-zinc-200 p-4 text-sm text-zinc-500">Caricamento avvisi.</div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel rounded-3xl p-6">
+      <h2 class="text-lg font-semibold text-zinc-950">Fonti e attribuzione</h2>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-600">
+        La dashboard distingue i conteggi ufficiali dagli avvisi informativi. I dati europei sono attribuiti a ECDC sulla base dei dati riportati dagli Stati membri EU/EEA.
+      </p>
+      <div id="sources" class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5"></div>
+    </section>
+  </main>
+
+  <script>
+    const app = {
+      data: null,
+      map: null,
+      markerLayer: null,
+      activeLayer: 'all',
+      europeChart: null,
+      usaChart: null
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function formatNumber(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+      return Number(value).toLocaleString('it-IT');
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Data non indicata';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return 'Data non indicata';
+      return date.toLocaleDateString('it-IT', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function setStatus(type, text) {
+      const color = type === 'ok' ? 'bg-emerald-500' : type === 'warning' ? 'bg-amber-400' : 'bg-rose-600';
+      document.getElementById('statusBadge').innerHTML = `
+        <span class="h-2 w-2 rounded-full ${color}"></span>
+        ${escapeHtml(text)}
+      `;
+    }
+
+    function initYearSelector() {
+      const select = document.getElementById('yearSelector');
+      const current = new Date().getFullYear();
+      const years = [current, current - 1, current - 2, current - 3, current - 4].filter(year => year >= 2022);
+      select.innerHTML = years.map(year => `<option value="${year}">${year}</option>`).join('');
+    }
+
+    function initMap() {
+      app.map = L.map('map', {
+        minZoom: 2,
+        maxZoom: 8,
+        zoomControl: true,
+        scrollWheelZoom: false,
+        worldCopyJump: true
+      }).setView([25, 5], 2);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 20
+      }).addTo(app.map);
+
+      app.markerLayer = L.layerGroup().addTo(app.map);
+      setTimeout(() => app.map.invalidateSize(), 250);
+      window.addEventListener('resize', () => app.map.invalidateSize());
+    }
+
+    function initLayerControls() {
+      document.querySelectorAll('[data-layer]').forEach(button => {
+        button.addEventListener('click', () => {
+          app.activeLayer = button.dataset.layer;
+          document.querySelectorAll('[data-layer]').forEach(item => item.classList.remove('active'));
+          button.classList.add('active');
+          renderMap();
+        });
+      });
+    }
+
+    function visibleMapPoints() {
+      const points = app.data?.mapPoints || [];
+      return points.filter(point => {
+        if (app.activeLayer === 'official') return point.officialRecordCount > 0;
+        if (app.activeLayer === 'events') return point.eventCount > 0;
+        if (app.activeLayer === 'signals') return point.signalCount > 0;
+        return true;
+      });
+    }
+
+    function primaryKind(point) {
+      if (app.activeLayer === 'signals') return 'signal';
+      if (app.activeLayer === 'events') return 'event';
+      if (point.eventCount > 0) return 'event';
+      if (point.officialRecordCount > 0) return 'official';
+      return 'signal';
+    }
+
+    function markerStyle(point) {
+      const kind = primaryKind(point);
+      const color = kind === 'official' ? '#2563eb' : kind === 'event' ? '#7c3aed' : '#be123c';
+      const magnitude = Math.max(point.officialCasesTotal || 0, point.signalCount || 0, point.eventCount ? 25 : 0, 1);
+      const radius = Math.max(7, Math.min(34, 7 + Math.sqrt(magnitude) * 2.5));
+
+      return {
+        radius,
+        color,
+        weight: 1.5,
+        fillColor: color,
+        fillOpacity: kind === 'event' ? 0.24 : 0.20
+      };
+    }
+
+    function officialText(point) {
+      if (!point.official?.length) return '';
+
+      return point.official.map(row => {
+        const parts = [
+          `<strong>${escapeHtml(row.source)}</strong>`,
+          escapeHtml(row.label || 'Dato ufficiale'),
+          `${formatNumber(row.cases)} casi`
+        ];
+
+        if (row.rate !== null && row.rate !== undefined) parts.push(`${formatNumber(row.rate)} per 100.000`);
+        if (row.latestWeek) parts.push(`settimana ${row.latestWeek}`);
+
+        return `<div style="margin-top:8px;">${parts.join(' · ')}</div>`;
+      }).join('');
+    }
+
+    function eventText(point) {
+      if (!point.events?.length) return '';
+
+      return point.events.map(row => `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e4e4e7;">
+          <div style="font-size:12px;color:#71717a;">Evento monitorato · ${escapeHtml(formatDate(row.asOf))}</div>
+          <div style="font-weight:600;margin-top:2px;">${escapeHtml(row.title)}</div>
+          <div style="font-size:12px;color:#52525b;margin-top:4px;">${escapeHtml(row.role)}</div>
+          <div style="font-size:12px;color:#52525b;margin-top:4px;">${formatNumber(row.casesTotal)} casi · ${formatNumber(row.confirmed)} confermati · ${formatNumber(row.deaths)} decessi</div>
+        </div>
+      `).join('');
+    }
+
+    function renderMap() {
+      if (!app.map || !app.markerLayer || !app.data) return;
+
+      app.markerLayer.clearLayers();
+      const points = visibleMapPoints();
+
+      points.forEach(point => {
+        const latest = point.latestSignal;
+        const popup = `
+          <div>
+            <div style="font-weight:700;font-size:15px;margin-bottom:6px;">${escapeHtml(point.name)}</div>
+            ${officialText(point)}
+            ${eventText(point)}
+            ${point.signalCount ? `
+              <div style="margin-top:10px;">
+                <strong>${formatNumber(point.signalCount)} avvisi recenti</strong>
+                ${point.institutionalSignalCount ? `<span style="color:#71717a;"> · ${formatNumber(point.institutionalSignalCount)} istituzionali</span>` : ''}
+              </div>
+            ` : ''}
+            ${latest ? `
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e4e4e7;">
+                <div style="font-size:12px;color:#71717a;">Ultimo avviso</div>
+                <div style="font-size:13px;margin-top:2px;">${escapeHtml(latest.title)}</div>
+                <div style="font-size:12px;color:#71717a;margin-top:4px;">${escapeHtml(latest.source || '')} · ${escapeHtml(formatDate(latest.publishedAt))}</div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        L.circleMarker([point.lat, point.lon], markerStyle(point))
+          .bindPopup(popup)
+          .addTo(app.markerLayer);
+      });
+
+      if (points.length) {
+        const bounds = L.latLngBounds(points.map(point => [point.lat, point.lon]));
+        app.map.fitBounds(bounds.pad(0.16), { animate: false });
+      } else {
+        app.map.setView([25, 5], 2);
+      }
+
+      renderCountryList(points);
+      setTimeout(() => app.map.invalidateSize(), 100);
+    }
+
+    function renderCountryList(points) {
+      const list = document.getElementById('countryList');
+      const rows = points.slice(0, 12);
+
+      if (!rows.length) {
+        list.innerHTML = `<div class="p-4 text-sm text-zinc-500">Nessun dato per questo filtro.</div>`;
+        return;
+      }
+
+      list.innerHTML = rows.map(point => {
+        const kind = primaryKind(point);
+        const label = point.eventCount > 0
+          ? `${formatNumber(point.eventCount)} evento monitorato`
+          : point.officialCasesTotal > 0
+            ? `${formatNumber(point.officialCasesTotal)} casi ufficiali`
+            : `${formatNumber(point.signalCount)} avvisi`;
+
+        return `
+          <button onclick="focusPoint('${point.iso}')" class="w-full p-4 text-left transition hover:bg-zinc-50">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="font-medium text-zinc-950">${escapeHtml(point.name)}</div>
+                <div class="mt-1 text-xs text-zinc-500">${label}</div>
+              </div>
+              <span class="dot ${kind}"></span>
+            </div>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function focusPoint(iso) {
+      const point = app.data?.mapPoints?.find(item => item.iso === iso);
+      if (!point || !app.map) return;
+      app.map.setView([point.lat, point.lon], 4, { animate: true });
+    }
+
+    window.focusPoint = focusPoint;
+
+    function renderSummary() {
+      const data = app.data;
+      const eu = data.official.europe;
+      const us = data.official.usa;
+      const currentEvent = data.official.currentEvents?.[0];
+
+      document.getElementById('euTotal').innerText = formatNumber(eu.totalCases);
+      document.getElementById('euMeta').innerText = `${eu.year} · ${formatNumber(eu.notificationRate)} per 100.000`;
+
+      document.getElementById('eventCases').innerText = currentEvent ? formatNumber(currentEvent.casesTotal) : '—';
+      document.getElementById('eventMeta').innerText = currentEvent ? `${formatNumber(currentEvent.confirmed)} confermati · ${formatDate(currentEvent.asOf)}` : 'Nessun evento';
+
+      document.getElementById('usTotal').innerText = us ? formatNumber(us.totalYtd) : '—';
+      document.getElementById('usMeta').innerText = us ? `${us.year} · settimana ${us.latestWeek || '—'}` : 'CDC non disponibile';
+
+      document.getElementById('mapCountries').innerText = formatNumber(data.mapPoints.length);
+      document.getElementById('signalTotal').innerText = formatNumber(data.signals.total);
+
+      document.getElementById('lastUpdate').innerText = `Ultimo aggiornamento: ${new Date(data.generatedAt).toLocaleString('it-IT')}`;
+      document.getElementById('europeSubtitle').innerText = `${eu.totalCases.toLocaleString('it-IT')} casi riportati in ${eu.reportingCountries} paesi nel ${eu.year}.`;
+    }
+
+    function renderEvents() {
+      const container = document.getElementById('eventCards');
+      const events = app.data.official.currentEvents || [];
+
+      if (!events.length) {
+        container.innerHTML = `<div class="rounded-2xl border border-zinc-200 p-4 text-sm text-zinc-500">Nessun evento recente monitorato.</div>`;
+        return;
+      }
+
+      container.innerHTML = events.map(event => `
+        <article class="rounded-2xl border border-zinc-200 p-5">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">${escapeHtml(event.status)}</span>
+            <span class="text-xs text-zinc-500">${escapeHtml(event.scope)}</span>
+            <span class="text-xs text-zinc-400">·</span>
+            <span class="text-xs text-zinc-500">${escapeHtml(formatDate(event.asOf))}</span>
+          </div>
+          <h3 class="mt-3 text-lg font-semibold text-zinc-950">${escapeHtml(event.title)}</h3>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-600">${escapeHtml(event.summary)}</p>
+
+          <div class="mt-5 grid grid-cols-4 gap-3">
+            <div class="rounded-2xl bg-zinc-50 p-3">
+              <div class="text-xl font-semibold text-zinc-950">${formatNumber(event.casesTotal)}</div>
+              <div class="text-xs text-zinc-500">casi</div>
+            </div>
+            <div class="rounded-2xl bg-zinc-50 p-3">
+              <div class="text-xl font-semibold text-zinc-950">${formatNumber(event.confirmed)}</div>
+              <div class="text-xs text-zinc-500">confermati</div>
+            </div>
+            <div class="rounded-2xl bg-zinc-50 p-3">
+              <div class="text-xl font-semibold text-zinc-950">${formatNumber(event.probable)}</div>
+              <div class="text-xs text-zinc-500">probabili</div>
+            </div>
+            <div class="rounded-2xl bg-zinc-50 p-3">
+              <div class="text-xl font-semibold text-zinc-950">${formatNumber(event.deaths)}</div>
+              <div class="text-xs text-zinc-500">decessi</div>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-600">
+            <div><strong>Rischio Europa:</strong> ${escapeHtml(event.riskEurope)}</div>
+            <div class="mt-1"><strong>Rischio globale:</strong> ${escapeHtml(event.riskGlobal)}</div>
+          </div>
+
+          <div class="mt-4 space-y-2">
+            ${(event.timeline || []).map(item => `
+              <a class="block rounded-xl border border-zinc-200 px-3 py-2 text-sm hover:bg-zinc-50" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">
+                <span class="font-medium text-zinc-950">${escapeHtml(formatDate(item.date))} · ${escapeHtml(item.label)}</span>
+                <span class="block text-zinc-500">${escapeHtml(item.detail)}</span>
+              </a>
+            `).join('')}
+          </div>
+        </article>
+      `).join('');
+    }
+
+    function renderEuropeTable() {
+      const rows = app.data.official.europe.topCountries || [];
+      const tbody = document.getElementById('europeTable');
+
+      tbody.innerHTML = rows.map(row => `
+        <tr>
+          <td class="px-4 py-3 text-zinc-700">${escapeHtml(row.country)}</td>
+          <td class="px-4 py-3 text-right font-medium text-zinc-950">${formatNumber(row.cases)}</td>
+          <td class="px-4 py-3 text-right text-zinc-600">${row.rate === null ? '—' : formatNumber(row.rate)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderEuropeChart() {
+      const rows = [...(app.data.official.europe.topCountries || [])].slice(0, 8).reverse();
+      const ctx = document.getElementById('europeChart').getContext('2d');
+
+      if (app.europeChart) app.europeChart.destroy();
+
+      app.europeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: rows.map(row => row.country),
+          datasets: [{
+            data: rows.map(row => row.cases),
+            borderWidth: 1,
+            borderRadius: 8,
+            backgroundColor: 'rgba(37, 99, 235, 0.16)',
+            borderColor: '#2563eb'
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, grid: { color: '#f1f1f2' }, border: { display: false }, ticks: { color: '#71717a', precision: 0 } },
+            y: { grid: { display: false }, border: { display: false }, ticks: { color: '#71717a' } }
+          }
+        }
+      });
+    }
+
+    function renderUsaChart() {
+      const rows = app.data.official.usa?.weekly || [];
+      const ctx = document.getElementById('usaChart').getContext('2d');
+
+      if (app.usaChart) app.usaChart.destroy();
+
+      app.usaChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: rows.map(row => `S${row.week}`),
+          datasets: [{
+            data: rows.map(row => row.cases),
+            fill: true,
+            tension: 0.32,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            borderColor: '#18181b',
+            backgroundColor: 'rgba(24, 24, 27, 0.06)',
+            pointBackgroundColor: '#18181b',
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 2,
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: items => `Settimana ${String(items[0].label).replace('S', '')}`,
+                label: item => `${item.parsed.y} casi riportati`
+              }
+            }
+          },
+          scales: {
+            y: { beginAtZero: true, grid: { color: '#f1f1f2' }, border: { display: false }, ticks: { color: '#71717a', precision: 0 } },
+            x: { grid: { display: false }, border: { display: false }, ticks: { color: '#71717a', maxRotation: 0, autoSkip: true } }
+          }
+        }
+      });
+    }
+
+    function renderSignals() {
+      const feed = document.getElementById('signalFeed');
+      const items = app.data.signals.items.slice(0, 8);
+
+      if (!items.length) {
+        feed.innerHTML = `<div class="rounded-2xl border border-zinc-200 p-4 text-sm text-zinc-500">Nessun avviso disponibile.</div>`;
+        return;
+      }
+
+      feed.innerHTML = items.map(item => {
+        const badge = item.kind === 'institutional'
+          ? `<span class="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">Istituzionale</span>`
+          : `<span class="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-800">Pubblico</span>`;
+
+        return `
+          <a href="${escapeHtml(item.url || '#')}" target="_blank" rel="noopener" class="block rounded-2xl border border-zinc-200 p-4 transition hover:bg-zinc-50">
+            <div class="flex flex-wrap items-center gap-2">
+              ${badge}
+              <span class="text-xs text-zinc-500">${escapeHtml(item.countryName || 'Internazionale')}</span>
+              <span class="text-xs text-zinc-400">·</span>
+              <span class="text-xs text-zinc-500">${escapeHtml(formatDate(item.publishedAt))}</span>
+            </div>
+            <h3 class="mt-3 text-base font-medium leading-snug text-zinc-950">${escapeHtml(item.title)}</h3>
+            <div class="mt-2 text-xs text-zinc-500">${escapeHtml(item.source || 'Fonte pubblica')}</div>
+          </a>
+        `;
+      }).join('');
+    }
+
+    function renderSources() {
+      const sources = document.getElementById('sources');
+
+      sources.innerHTML = app.data.sources.map(source => `
+        <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener" class="rounded-2xl border border-zinc-200 p-4 transition hover:bg-zinc-50">
+          <div class="font-medium text-zinc-950">${escapeHtml(source.name)}</div>
+          <div class="mt-1 text-sm text-zinc-500">${escapeHtml(source.coverage)}</div>
+        </a>
+      `).join('');
+    }
+
+    async function loadMonitor() {
+      setStatus('warning', 'Aggiornamento');
+      const year = document.getElementById('yearSelector').value;
+
+      try {
+        const response = await fetch(`/api/monitor?year=${encodeURIComponent(year)}`, {
+          headers: { 'accept': 'application/json' }
+        });
+
+        if (!response.ok) throw new Error(`API ${response.status}`);
+
+        app.data = await response.json();
+
+        renderSummary();
+        renderEvents();
+        renderMap();
+        renderEuropeTable();
+        renderEuropeChart();
+        renderUsaChart();
+        renderSignals();
+        renderSources();
+
+        const anyUnavailable = Object.values(app.data.status || {}).includes('unavailable');
+        setStatus(anyUnavailable ? 'warning' : 'ok', anyUnavailable ? 'Dati parziali' : 'Dati aggiornati');
+      } catch (error) {
+        setStatus('error', 'Dati non disponibili');
+        document.getElementById('signalFeed').innerHTML = `
+          <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            I dati non sono disponibili in questo momento.
+          </div>
+        `;
+      }
+
+      lucide.createIcons();
+    }
+
+    window.addEventListener('load', () => {
+      initYearSelector();
+      initMap();
+      initLayerControls();
+      lucide.createIcons();
+      loadMonitor();
+    });
+  </script>
+</body>
+</html>
